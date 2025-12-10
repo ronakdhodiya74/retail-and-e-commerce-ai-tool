@@ -1,0 +1,66 @@
+from fastapi import FastAPI
+import httpx
+import os
+
+app = FastAPI(title="SmartShop Unified Search API")
+
+# Load API Keys from environment variables
+AMAZON_API_KEY = os.getenv("AMAZON_API_KEY")
+FLIPKART_API_KEY = os.getenv("FLIPKART_API_KEY")
+MEESHO_API_KEY = os.getenv("MEESHO_API_KEY")
+AJIO_API_KEY = os.getenv("AJIO_API_KEY")
+MYNTRA_API_KEY = os.getenv("MYNTRA_API_KEY")
+
+
+@app.get("/")
+def home():
+    return {"message": "SmartShop API is running successfully!"}
+
+
+@app.get("/search")
+async def search_products(query: str):
+    results = {}
+
+    async with httpx.AsyncClient() as client:
+
+        # AMAZON
+        if AMAZON_API_KEY:
+            try:
+                resp = await client.get(f"https://amazon-api.example.com/search?q={query}&key={AMAZON_API_KEY}")
+                results["amazon"] = resp.json()
+            except:
+                results["amazon"] = {"error": "Amazon API failed"}
+
+        # FLIPKART
+        if FLIPKART_API_KEY:
+            try:
+                resp = await client.get(f"https://flipkart-api.example.com/search?q={query}&key={FLIPKART_API_KEY}")
+                results["flipkart"] = resp.json()
+            except:
+                results["flipkart"] = {"error": "Flipkart API failed"}
+
+        # MEESHO
+        if MEESHO_API_KEY:
+            try:
+                resp = await client.get(f"https://meesho-api.example.com/search?q={query}&key={MEESHO_API_KEY}")
+                results["meesho"] = resp.json()
+            except:
+                results["meesho"] = {"error": "Meesho API failed"}
+
+        # AJIO
+        if AJIO_API_KEY:
+            try:
+                resp = await client.get(f"https://ajio-api.example.com/search?q={query}&key={AJIO_API_KEY}")
+                results["ajio"] = resp.json()
+            except:
+                results["ajio"] = {"error": "Ajio API failed"}
+
+        # MYNTRA
+        if MYNTRA_API_KEY:
+            try:
+                resp = await client.get(f"https://myntra-api.example.com/search?q={query}&key={MYNTRA_API_KEY}")
+                results["myntra"] = resp.json()
+            except:
+                results["myntra"] = {"error": "Myntra API failed"}
+
+    return {"query": query, "results": results}

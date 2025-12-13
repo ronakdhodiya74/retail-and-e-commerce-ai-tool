@@ -1,0 +1,190 @@
+# main.py
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+import os
+import asyncio
+import httpx
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load .env during local development (Railway will use environment variables)
+load_dotenv()
+
+app = FastAPI(title="SmartShop Unified Retail & E-Commerce AI Tool")
+
+# Environment-based API credentials (set these in Railway > Variables)
+AMAZON_API_KEY = os.getenv("AMAZON_API_KEY")
+FLIPKART_API_KEY = os.getenv("FLIPKART_API_KEY")
+MEESHO_API_KEY = os.getenv("MEESHO_API_KEY")
+AJIO_API_KEY = os.getenv("AJIO_API_KEY")
+MYNTRA_API_KEY = os.getenv("MYNTRA_API_KEY")
+
+# --- Pydantic models ---
+class Product(BaseModel):
+    id: str
+    title: str
+    price: float
+    currency: str = "INR"
+    link: Optional[str] = None
+    image: Optional[str] = None
+    source: Optional[str] = None
+    extra: Optional[Dict[str, Any]] = None
+
+class SearchResponse(BaseModel):
+    query: str
+    results: Dict[str, List[Product]]
+
+class ForecastRequest(BaseModel):
+    product_id: str
+    days: Optional[int] = 30
+
+class ForecastResponse(BaseModel):
+    product_id: str
+    forecast: List[Dict[str, Any]]
+
+class DescriptionRequest(BaseModel):
+    title: str
+    features: Optional[List[str]] = []
+
+# --- Utility placeholders (replace with real API/ML calls) ---
+async def fetch_from_platform_mock(platform: str, query: str) -> List[Dict]:
+    """Placeholder function that simulates fetching results from a marketplace."""
+    await asyncio.sleep(0.2)  # simulate IO
+    items = []
+    for i in range(3):
+        items.append({
+            "id": f"{platform[:3]}-{int(datetime.utcnow().timestamp())}-{i}",
+            "title": f"{query} - {platform.title()} Option {i+1}",
+            "price": round(1000 + (i * 150) + len(query), 2),
+            "currency": "INR",
+            "link": f"https://{platform}.example.com/product/{i}",
+            "image": None
+        })
+    return items
+
+def convert_to_product(dict_item: Dict, source: str) -> Product:
+    return Product(
+        id=dict_item.get("id"),
+        title=dict_item.get("title"),
+        price=float(dict_item.get("price", 0)),
+        currency=dict_item.get("currency", "INR"),
+        link=dict_item.get("link"),
+        image=dict_item.get("image"),
+        source=source,
+        extra=dict_item.get("extra", {})
+    )
+
+def naive_time_series_forecast(history_values: List[float], days: int) -> List[Dict]:
+    """
+    Extremely simple forecast: take last known value and apply a small linear trend.
+    Replace with an ARIMA/LSTM/Prophet model in production.
+    """
+    if not history_values:
+        base = 100.0
+    else:
+        base = history_values[-1]
+    trend = (history_values[-1] - history_values[0]) / max(len(history_values)-1, 1) if len(history_values) > 1 else 0
+    forecast = []
+    for d in range(1, days + 1):
+        value = round(base + trend * d, 2)
+        date = (datetime.utcnow() + timedelta(days=d)).date().isoformat()
+        forecast.append({"date": date, "predicted_price": value})
+    return forecast
+
+def generate_description_ai(title: str, features: List[str]) -> str:
+    """Very simple template-based description generator. Replace with a real LLM if available."""
+    lines = [f"{title} — Key features:"]
+    for f in features:
+        lines.append(f"- {f}")
+    lines.append("")
+    lines.append("Short summary:")
+    lines.append(f"{title} is an excellent product designed for quality and value. Ideal for everyday use and offers great value for its price.")
+    return "\n".join(lines)
+
+# --- Endpoints ---
+@app.get("/")
+def root():
+    return {"message": "SmartShop API is running", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "time": datetime.utcnow().isoformat()}
+
+@app.get("/search", response_model=SearchResponse)
+async def search(query: str = Query(..., min_length=1, description="Search query")):
+    """
+    Unified search across multiple platforms (async).
+    Currently uses mock fetchers. Replace fetch_from_platform_mock with real API calls / scrapers.
+    """
+    platforms = {
+        "amazon": AMAZON_API_KEY,
+        "flipkart": FLIPKART_API_KEY,
+        "meesho": MEESHO_API_KEY,
+        "ajio": AJIO_API_KEY,
+        "myntra": MYNTRA_API_KEY
+    }
+
+    async def fetch_if_available(platform_name: str, key: Optional[str]):
+        # If the API key exists we would call that platform. For now, call the mock.
+        try:
+            items = await fetch_from_platform_mock(platform_name, query)
+            return platform_name, [convert_to_product(it, source=platform_name) for it in items]
+        except Exception as e:
+            return platform_name, []
+
+    # Launch all fetches in parallel
+    tasks = [fetch_if_available(name, k) for name, k in platforms.items()]
+    results = await asyncio.gather(*tasks)
+    results_dict = {name: items for (name, items) in results}
+    return SearchResponse(query=query, results=results_dict)
+
+@app.get("/recommend")
+async def recommend(product_id: str = Query(..., description="Product ID to get recommendations for")):
+    """
+    Return product recommendations for a product_id.
+    Currently returns mocked similar items. Replace with real recommender logic.
+    """
+    # MOCK
+    base_name = product_id.split("-")[-1] if "-" in product_id else product_id
+    recs = []
+    for i in range(3):
+        recs.append({
+            "id": f"rec-{base_name}-{i}",
+            "title": f"Similar to {product_id} - option {i+1}",
+            "price": 900 + i * 120,
+            "source": "unified"
+        })
+    return {"product_id": product_id, "recommendations": recs}
+
+@app.post("/forecast", response_model=ForecastResponse)
+async def forecast(req: ForecastRequest):
+    """
+    Forecast price or demand for a product. This is a naive placeholder.
+    Replace with a proper trained model for better accuracy.
+    """
+    # In real app: fetch historical sales/price data from DB or scraper
+    # For placeholder, create simple synthetic history
+    history = [950 + i * 5 for i in range(10)]
+    fc = naive_time_series_forecast(history, req.days)
+    return ForecastResponse(product_id=req.product_id, forecast=fc)
+
+@app.post("/generate_description")
+def generate_description(req: DescriptionRequest):
+    """
+    Generate an SEO-friendly product description from title + features.
+    Replace this function to call your chosen LLM or template system.
+    """
+    desc = generate_description_ai(req.title, req.features)
+    return {"title": req.title, "description": desc}
+
+# Example admin/debug endpoint to show which API keys are set (DO NOT expose in production)
+@app.get("/debug/keys")
+def debug_keys():
+    return {
+        "AMAZON": bool(AMAZON_API_KEY),
+        "FLIPKART": bool(FLIPKART_API_KEY),
+        "MEESHO": bool(MEESHO_API_KEY),
+        "AJIO": bool(AJIO_API_KEY),
+        "MYNTRA": bool(MYNTRA_API_KEY),
+    }
